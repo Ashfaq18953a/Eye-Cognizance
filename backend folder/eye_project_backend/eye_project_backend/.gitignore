@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+
+# Database
+db.sqlite3
+
+# Secrets
+firebase-adminsdk.json
+
+# Virtual env
+venv/

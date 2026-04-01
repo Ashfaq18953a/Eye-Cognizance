@@ -91,15 +91,6 @@ export default function RescheduleOrRefund() {
           </div>
         )}
 
-        {/* Result messages */}
-        {actionDone === "reschedule" && (
-          <div className="bg-green-50 border border-green-300 rounded-xl p-5 text-center">
-            <p className="text-green-700 font-bold text-lg">✅ Reschedule Confirmed!</p>
-            <p className="text-green-600 text-sm mt-1">
-              You won't be charged again. Redirecting you to the booking page…
-            </p>
-          </div>
-        )}
 
         {actionDone === "cancel" && (
           <div className="bg-blue-50 border border-blue-300 rounded-xl p-5 text-center">
@@ -122,13 +113,6 @@ export default function RescheduleOrRefund() {
         {/* Action buttons — only show if no action taken yet */}
         {!actionDone && (
           <div className="flex flex-col gap-4 mt-2">
-            <button
-              onClick={() => handleAction("reschedule")}
-              disabled={processing}
-              className="w-full py-3 rounded-xl bg-[#6A8E4F] hover:bg-[#55753F] text-white font-bold transition disabled:opacity-50"
-            >
-              {processing ? "Processing…" : "📅 Reschedule (Free)"}
-            </button>
             <button
               onClick={() => handleAction("cancel")}
               disabled={processing}

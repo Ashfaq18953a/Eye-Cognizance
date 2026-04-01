@@ -8,8 +8,8 @@ def send_meeting_reminders():
     target = now + timedelta(minutes=5)
 
     appointments = Appointment.objects.filter(
-        start_datetime__range=(now, target),
-        meet_link__isnull=False
+        date_time__range=(now, target),
+        meeting_link__isnull=False
     )
 
     for appt in appointments:

@@ -263,7 +263,7 @@ const PaymentConfirmation = () => {
               </a>
             </p>
             <p className="text-xs text-gray-500 mb-4 italic">
-              Note: This link will only activate EXACTLY 6 minutes before your scheduled appointment time.
+              Note: This link will only activate EXACTLY 5 minutes before your scheduled appointment time.
             </p>
 
             {/* Patient Info */}

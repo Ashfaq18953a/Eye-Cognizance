@@ -11,6 +11,13 @@ export default function AppointmentsPage() {
   // Default today
   const today = new Date().toISOString().split("T")[0];
   const [selectedDate, setSelectedDate] = useState(today);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Real-time update for "Join" button state
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 10000); 
+    return () => clearInterval(timer);
+  }, []);
 
   const fetchAppointments = async (date) => {
     setLoading(true);
@@ -186,14 +193,35 @@ export default function AppointmentsPage() {
                   </td>
                   <td className="border px-4 py-2">
                     {appt.meeting_link ? (
-                      <a
-                        href={appt.meeting_link}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-blue-600 underline"
-                      >
-                        Join
-                      </a>
+                      (() => {
+                        const start = new Date(appt.date_time);
+                        const fiveMinsBefore = new Date(start.getTime() - 5 * 60000);
+                        const end = new Date(start.getTime() + 30 * 60000);
+                        const isJoinable = currentTime >= fiveMinsBefore && currentTime < end;
+
+                        if (isJoinable) {
+                          return (
+                            <a
+                              href={appt.meeting_link}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="bg-green-600 text-white px-3 py-1 rounded text-sm font-bold hover:bg-green-700 transition shadow"
+                            >
+                              Join
+                            </a>
+                          );
+                        } else if (currentTime < fiveMinsBefore) {
+                          const diffMs = fiveMinsBefore - currentTime;
+                          const diffMins = Math.ceil(diffMs / 60000);
+                          return (
+                            <span className="text-gray-400 text-xs italic" title={`Activates at ${fiveMinsBefore.toLocaleTimeString()}`}>
+                              Wait {diffMins}m
+                            </span>
+                          );
+                        } else {
+                          return <span className="text-red-400 text-xs italic">Ended</span>;
+                        }
+                      })()
                     ) : (
                       "-"
                     )}

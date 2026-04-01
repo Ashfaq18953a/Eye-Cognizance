@@ -39,7 +39,7 @@ const ConsultationDetails = () => {
       const diffMs = apptTime - now;
 
       const isExpired = now > endTime;
-      const isWithinJoinWindow = diffMs <= 360000; // 6 mins in ms
+      const isWithinJoinWindow = diffMs <= 300000; // 5 mins in ms
 
       if (!isExpired && isWithinJoinWindow) {
         setCanJoin(true);

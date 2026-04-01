@@ -85,7 +85,7 @@ const Status = () => {
       const diffMs = apptTime - now;
 
       const isExpired = now > endTime;
-      const isTooEarly = diffMs > 360000; // 6 mins in ms
+      const isTooEarly = diffMs > 300000; // 5 mins in ms
 
       if (!isTooEarly && !isExpired) {
         setCanJoin(true);
@@ -460,14 +460,14 @@ const Status = () => {
 
                 <h2 className="text-2xl font-black text-[#2C3E1F] mb-4">{getPlatformName()}</h2>
                 <p className="text-gray-500 font-bold text-sm mb-10 px-4 leading-relaxed">
-                  The secure consultation link is locked and will activate <span className="text-[#35A114]">6 minutes</span> before your slot.
+                  The secure consultation link is locked and will activate <span className="text-[#35A114]">5 minutes</span> before your slot.
                 </p>
 
                 <button
                   className={`w-full font-black py-6 rounded-[2rem] text-xl shadow-2xl transition-all duration-300 ${canJoin ? "bg-[#35A114] hover:bg-green-700 text-white hover:shadow-green-300 shadow-green-200" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}
                   onClick={() => {
                     if (!canJoin) {
-                      alert(timeLeftStr === "Meeting Expired" ? "Session Terminated: This consultation has expired." : "Security Protocol: Your consultation link activates exactly 6 minutes before the start time.");
+                      alert(timeLeftStr === "Meeting Expired" ? "Session Terminated: This consultation has expired." : "Security Protocol: Your consultation link activates exactly 5 minutes before the start time.");
                       return;
                     }
                     if (apptData.meeting_link) {

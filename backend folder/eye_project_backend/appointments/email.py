@@ -8,10 +8,10 @@ Hello {appointment.patient_name},
 
 Your video consultation is scheduled.
 
-🕒 Time: {appointment.start_datetime.strftime('%d %b %Y, %I:%M %p')}
-🎥 Join Link: {appointment.meet_link}
+🕒 Time: {appointment.date_time.strftime('%d %b %Y, %I:%M %p')}
+🎥 Join Link: {appointment.meeting_link}
 
-Please join 6 minutes early.
+Please join 5 minutes early.
 
 Regards,
 Eye Cognizance

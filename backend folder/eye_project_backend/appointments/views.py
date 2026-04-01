@@ -1174,7 +1174,7 @@ class PatientFreeRescheduleView(APIView):
                     f"Your consultation has been successfully rescheduled.\n"
                     f"New Date & Time: {time_str}\n"
                     f"Meeting Link: {proxy_link}\n\n"
-                    f"Please note: For security, this link will only activate EXACTLY 6 minutes before your scheduled appointment time.\n\n"
+                    f"Please note: For security, this link will only activate EXACTLY 5 minutes before your scheduled appointment time.\n\n"
                     f"Thank you for your patience!\n\n"
                     f"Regards,\n"
                     f"Eye Cognizance Clinic"
@@ -1243,7 +1243,7 @@ class PatientOneClickRescheduleView(APIView):
                     f"  Date     : {new_date_time.strftime('%d %b %Y')}\n"
                     f"  Time     : {time_str}\n"
                     f"  Link     : {proxy_link}\n\n"
-                    f"Please note: This link will only activate exactly 6 minutes before the meeting starts.\n\n"
+                    f"Please note: This link will only activate exactly 5 minutes before the meeting starts.\n\n"
                     f"Regards,\n"
                     f"Eye Cognizance Clinic"
                 )
@@ -1383,7 +1383,6 @@ class AdminLeaveTodayView(APIView):
                     <ul style="list-style: none; padding: 0;">
                         {slot_html}
                     </ul>
-                    <p><a href="{full_resched_url}">More date options...</a></p>
 
                     <h3 style="color: #d33;">Option 2: Cancel completely</h3>
                     <p>If you prefer a full refund, click here: <br/> 
@@ -1398,7 +1397,7 @@ class AdminLeaveTodayView(APIView):
                 message_plain = (
                     f"Dear {display_name},\n\n"
                     f"The doctor is on emergency leave today. Your appointment is cancelled.\n\n"
-                    f"Please check this email in HTML mode to click a new slot, or visit {full_resched_url} to reschedule for free.\n"
+                    f"Please check this email in HTML mode to click a new slot.\n"
                     f"To request a refund, visit: {refund_url}\n\n"
                     f"Eye Cognizance Clinic"
                 )
