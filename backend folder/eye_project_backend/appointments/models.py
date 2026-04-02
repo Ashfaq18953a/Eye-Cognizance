@@ -140,6 +140,10 @@ class Appointment(models.Model):
     # Tracks if patient already used the one-time emergency reschedule
     emergency_rescheduled = models.BooleanField(default=False)
 
+    # Added for emergency refund justifications
+    cancel_reason = models.TextField(null=True, blank=True)
+    cancel_document = models.FileField(upload_to="cancellation_docs/", null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     @property

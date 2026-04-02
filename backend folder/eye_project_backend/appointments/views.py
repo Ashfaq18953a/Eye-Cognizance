@@ -376,8 +376,6 @@ class VerifyPaymentAndCreateBooking(APIView):
 
 
 
-class AdminPaymentView(APIView):
-    permission_classes = []
 
 class AdminPaymentView(APIView):
     permission_classes = []
@@ -591,40 +589,6 @@ class AdminSendEmailView(APIView):
 
         send_mail(subject, message, 'no-reply@eyecognizance.com', [email], fail_silently=False)
         return Response({"message": "Email sent"})
-
-
-
-    permission_classes = [IsAdminUser]
-
-    def get(self, request):
-        settings_obj = SystemSettings.objects.first()
-        if not settings_obj:
-            settings_obj = SystemSettings.objects.create()
-        serializer = SystemSettingsSerializer(settings_obj)
-        return Response(serializer.data)
-
-    def post(self, request):
-        """
-        Body example:
-        {
-            "locked_slots": {
-                "2026-02-28": ["09:00 AM", "10:30 AM"],
-                "2026-03-01": ["02:00 PM"]
-            }
-        }
-        """
-        settings_obj = SystemSettings.objects.first()
-        if not settings_obj:
-            settings_obj = SystemSettings.objects.create()
-
-        locked_slots = request.data.get("locked_slots")
-        if locked_slots:
-            # Update only the locked_slots field
-            settings_obj.locked_slots.update(locked_slots)
-            settings_obj.save()
-
-        serializer = SystemSettingsSerializer(settings_obj)
-        return Response(serializer.data)
 
 
 
@@ -862,9 +826,103 @@ class AdminSettingsView(APIView):
         available_data = settings_obj.locked_slots or {}
         custom_ranges_data = settings_obj.custom_time_ranges or {}
 
-        # DELETE Action: 
-        # If no valid time ranges are provided, remove override for this date.
-        # This makes it revert to the "normal" continuous slots.
+        # 1. Determine comparison slots (What will the grid look like after this update?)
+        comparison_slots = []
+        if time_ranges and len(time_ranges) > 0:
+            for r in time_ranges:
+                s_t = r.get("from")
+                e_t = r.get("to")
+                if s_t and e_t:
+                    dur = int(r.get("duration", time_constraint))
+                    comparison_slots.extend(self.generate_slots(s_t, e_t, dur))
+            comparison_slots = sorted(list(set(comparison_slots)), key=lambda x: datetime.strptime(x, self.TIME_FORMAT))
+        else:
+            # If deleting overrides, the comparison grid is the default set of slots
+            # Patients on 9:20, 9:40 (20m grid) will be lost; 9:00, 9:30 (default grid) are safe.
+            comparison_slots = DEFAULT_TIME_SLOTS
+
+        # 2. Identify and notify appointments that lose their slot in the new grid
+        tz = timezone.get_current_timezone()
+        from datetime import datetime as dt_class, time as time_class
+        try:
+            target_date = dt_class.strptime(str(date), "%Y-%m-%d").date()
+            day_start = timezone.make_aware(dt_class.combine(target_date, time_class.min), tz)
+            day_end   = timezone.make_aware(dt_class.combine(target_date, time_class.max), tz)
+            
+            existing_appts = Appointment.objects.filter(
+                date_time__range=(day_start, day_end)
+            ).exclude(status="cancelled")
+
+            lost_appts = []
+            for appt in existing_appts:
+                # Format to "09:00 AM" etc for exact matching
+                appt_time_str = appt.date_time.astimezone(tz).strftime(self.TIME_FORMAT)
+                
+                # If appt time is NOT in the new/default grid, it must be cancelled
+                if appt_time_str not in comparison_slots:
+                    lost_appts.append(appt)
+
+            if lost_appts:
+                one_click_base = f"{request.build_absolute_uri('/')[:-1]}/api/patient/one-click-reschedule/"
+                
+                # Find fallback slots for next 3 days (reuse standard 30m slots for simplicity in fallbacks)
+                fallback_slots = []
+                check_day = target_date + timedelta(days=1)
+                while len(fallback_slots) < 6 and (check_day - target_date).days < 7:
+                    if not DoctorLeave.objects.filter(leave_date=check_day).exists():
+                        d_s = timezone.make_aware(dt_class.combine(check_day, time_class.min), tz)
+                        d_e = timezone.make_aware(dt_class.combine(check_day, time_class.max), tz)
+                        booked = Appointment.objects.filter(date_time__range=(d_s, d_e)).exclude(status="cancelled")
+                        booked_st = [a.date_time.astimezone(tz).strftime(self.TIME_FORMAT) for a in booked]
+                        
+                        count_for_day = 0
+                        for slot in DEFAULT_TIME_SLOTS:
+                            if slot not in booked_st:
+                                fallback_slots.append({
+                                    "date": check_day.strftime("%Y-%m-%d"),
+                                    "label": f"{check_day.strftime('%d %b')} {slot}",
+                                    "time": slot
+                                })
+                                count_for_day += 1
+                                if count_for_day >= 2: break
+                    check_day += timedelta(days=1)
+
+                for appt in lost_appts:
+                    appt.status = "cancelled"
+                    appt.save()
+                    
+                    recipient = appt.patient_email or (appt.patient.email if appt.patient else None)
+                    if recipient:
+                        slot_html = "".join([
+                            f'<li><a href="{one_click_base}?id={appt.id}&date={s["date"]}&time={s["time"]}" style="display:inline-block; padding:8px 15px; margin:5px; background-color:#6A8E4F; color:white; text-decoration:none; border-radius:5px; font-weight:bold;">{s["label"]}</a></li>'
+                            for s in fallback_slots
+                        ])
+                        refund_url = f"http://localhost:5173/reschedule-or-refund/{appt.id}?action=cancel"
+                        sub = f"🚨 Schedule Update: Your Appointment at Eye Cognizance"
+                        msg = f"""
+                            <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+                                <h2>Important Schedule Update</h2>
+                                <p>Dear {appt.patient_name or 'Patient'},</p>
+                                <p>Your appointment on <b>{target_date.strftime('%d %b %Y')}</b> has been cancelled due to a schedule update in our admin panel.</p>
+                                <h3 style="color:#6A8E4F;">Option 1: Pick a New Slot Instantly (FREE)</h3>
+                                <p>Click any slot below to reschedule for free right now:</p>
+                                <ul style="list-style:none; padding:0;">{slot_html}</ul>
+                                <h3 style="color:#d33;">Option 2: Cancel completely</h3>
+                                <p>If you prefer a full refund, click here: <br/> 
+                                <a href="{refund_url}" style="color:#d33; font-weight:bold;">Request Full Refund</a></p>
+                                <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                                <p>Eye Cognizance Clinic</p>
+                            </div>
+                        """
+                        try:
+                            email = EmailMultiAlternatives(sub, "Schedule updated. Your appointment is cancelled.", settings.EMAIL_HOST_USER, [recipient])
+                            email.attach_alternative(msg, "text/html")
+                            email.send()
+                        except: pass
+        except Exception as e:
+            print(f"Schedule Sync Notification Error: {e}")
+
+        # Now update the database with new availability
         if not time_ranges or len(time_ranges) == 0 or (len(time_ranges) == 1 and not time_ranges[0].get("from")):
             if str(date) in available_data:
                 del available_data[str(date)]
@@ -876,33 +934,17 @@ class AdminSettingsView(APIView):
             settings_obj.save()
             
             return Response({
-                "message": "Availability rules removed, reverted to default schedule.",
+                "message": "Availability rules removed. Orphaned appointments have been notified.",
                 "available_slots": [],
                 "time_ranges": []
             })
-
-
-        generated_slots = []
-
-        for r in time_ranges:
-            start = r.get("from")
-            end = r.get("to")
-            if not start or not end:
-                continue
-            duration = int(r.get("duration", time_constraint))
-            generated_slots.extend(self.generate_slots(start, end, duration))
-
-        generated_slots = sorted(
-            list(set(generated_slots)),
-            key=lambda x: datetime.strptime(x, self.TIME_FORMAT)
-        )
 
         if not isinstance(available_data, dict):
             available_data = {}
         if not isinstance(custom_ranges_data, dict):
             custom_ranges_data = {}
 
-        available_data[str(date)] = generated_slots
+        available_data[str(date)] = comparison_slots
         custom_ranges_data[str(date)] = time_ranges
 
         settings_obj.locked_slots = available_data
@@ -911,8 +953,8 @@ class AdminSettingsView(APIView):
         settings_obj.save()
                                     
         return Response({
-            "message": "Availability saved successfully",
-            "available_slots": generated_slots,
+            "message": "Availability saved successfully. Orphaned appointments have been notified.",
+            "available_slots": comparison_slots,
             "time_ranges": time_ranges
         })
 
@@ -1051,6 +1093,10 @@ class PatientRescheduleOrRefundView(APIView):
                 if appt.status == "cancelled" and appt.payment_status == "refunded":
                     return Response({"error": "This appointment has already been cancelled and refunded."}, status=400)
                 
+                # Get the reason and document if provided
+                cancel_reason = request.data.get("reason")
+                cancel_doc = request.FILES.get("document")
+
                 # ── Initiate Razorpay Refund ─────────────────────────────
                 refund_destination = "your original payment method"
                 if appt.razorpay_payment_id:
@@ -1073,9 +1119,13 @@ class PatientRescheduleOrRefundView(APIView):
                     except Exception as e:
                         print(f"Leave Refund Error: {e}")
                 
-                # Update status
+                # Update status and save justification
                 appt.status = "cancelled"
                 appt.payment_status = "refunded"
+                if cancel_reason:
+                    appt.cancel_reason = cancel_reason
+                if cancel_doc:
+                    appt.cancel_document = cancel_doc
                 appt.save()
 
                 # Send refund confirmation email
@@ -1326,6 +1376,7 @@ class AdminLeaveTodayView(APIView):
 
     def post(self, request):
         now = timezone.now()
+        custom_message = request.data.get("custom_message")
 
         # Accept optional date param; default to today
         date_param = request.data.get("date") or request.GET.get("date")
@@ -1361,7 +1412,6 @@ class AdminLeaveTodayView(APIView):
 
         # 3. Pre-calculate some available slots for next 3 days
         one_click_base = f"{request.build_absolute_uri('/')[:-1]}/api/patient/one-click-reschedule/"
-        refund_base = f"{request.build_absolute_uri('/')[:-1]}/api/patient/reschedule-or-refund/" # though we use frontend page for refund
         
         # Calculate available slots for next 3 days
         available_grid = []
@@ -1390,34 +1440,35 @@ class AdminLeaveTodayView(APIView):
             days_to_check += 1
 
         cancelled_count = 0
+        patient_list_summary = []
         for appt in appointments:
+            p_name = appt.patient_name or (appt.patient.username if appt.patient else "Patient")
+            patient_list_summary.append(p_name)
             appt.status = "cancelled"
             appt.save()
             cancelled_count += 1
 
             recipient_email = appt.patient_email or (appt.patient.email if appt.patient else None)
-            display_name = appt.patient_name or (appt.patient.username if appt.patient else "Patient")
-
             if recipient_email:
-                # Build HTML list of slots
                 slot_html = ""
                 for slot in available_grid:
                     link = f"{one_click_base}?id={appt.id}&date={slot['date']}&time={slot['time']}"
                     slot_html += f'<li><a href="{link}" style="display:inline-block; padding:8px 15px; margin:5px; background-color:#6A8E4F; color:white; text-decoration:none; border-radius:5px; font-weight:bold;">{slot["label"]}</a></li>'
 
-                # Full page link if they want more dates
-                full_resched_url = f"http://localhost:5173/reschedule-or-refund/{appt.id}?action=reschedule"
                 refund_url = f"http://localhost:5173/reschedule-or-refund/{appt.id}?action=cancel"
-
                 subject = "🚨 Emergency Update: Your Appointment at Eye Cognizance"
                 
-                # HTML Message
+                # Injection of custom message
+                admin_note = f'<p style="background:#fefedc; padding:10px; border-left:4px solid #fecb00; font-style:italic;"><strong>Message from Doctor:</strong><br/>{custom_message}</p>' if custom_message else ""
+
                 message_html = f"""
                 <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
                     <h2 style="color: #c00;">Emergency Leave Notification</h2>
-                    <p>Dear {display_name},</p>
+                    <p>Dear {p_name},</p>
                     <p>Due to an emergency, the doctor had to take leave today. Your appointment has been cancelled.</p>
                     
+                    {admin_note}
+
                     <h3 style="color: #6A8E4F;">Option 1: Pick a New Slot Instantly (FREE)</h3>
                     <p>Click any slot below to reschedule for free right now:</p>
                     <ul style="list-style: none; padding: 0;">
@@ -1432,45 +1483,68 @@ class AdminLeaveTodayView(APIView):
                     <p>Eye Cognizance Clinic</p>
                 </div>
                 """
-                
-                # Non-HTML fallback
-                message_plain = (
-                    f"Dear {display_name},\n\n"
-                    f"The doctor is on emergency leave today. Your appointment is cancelled.\n\n"
-                    f"Please check this email in HTML mode to click a new slot.\n"
-                    f"To request a refund, visit: {refund_url}\n\n"
-                    f"Eye Cognizance Clinic"
-                )
-
                 try:
-                    email = EmailMultiAlternatives(subject, message_plain, settings.EMAIL_HOST_USER, [recipient_email])
+                    email = EmailMultiAlternatives(subject, f"Emergency Leave. Appointment cancelled. {custom_message or ''}", settings.EMAIL_HOST_USER, [recipient_email])
                     email.attach_alternative(message_html, "text/html")
                     email.send()
-                    print(f"One-click leave mail sent to {recipient_email}")
-                except Exception as e:
-                    print(f"Leave Email Error: {e}")
+                except: pass
 
         return Response({
             "success": True,
-            "message": f"Leave set. {cancelled_count} notifications sent with one-click slots.",
-            "cancelled": cancelled_count
+            "message": f"Leave activated. {cancelled_count} patients notified.",
+            "cancelled": cancelled_count,
+            "patients": patient_list_summary
         })
 
     def get(self, request):
-        date_str = request.query_params.get("date")
-        if date_str:
+        """Returns a list of appointments affected by leave (Defaults to today) or checks is_leave status."""
+        date_param = request.GET.get("date")
+        now = timezone.now()
+        
+        target_date = None
+        if date_param:
             try:
                 from datetime import datetime as dt
-                selected_date = dt.strptime(date_str, "%Y-%m-%d").date()
-                is_leave = DoctorLeave.objects.filter(leave_date=selected_date).exists()
-                return Response({"is_leave": is_leave})
+                target_date = dt.strptime(date_param, "%Y-%m-%d").date()
             except ValueError:
-                return Response({"error": "Invalid date format"}, status=400)
-        
-        # If no date specified, return ALL upcoming leaves
-        leaves = DoctorLeave.objects.filter(leave_date__gte=timezone.now().date()).order_by("leave_date")
-        data = [{"id": l.id, "date": l.leave_date.strftime("%Y-%m-%d")} for l in leaves]
-        return Response(data)
+                return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
+        else:
+            target_date = timezone.localtime(now).date()
+
+        # If it's a simple "is this date leave?" check from frontend:
+        if request.GET.get("check"):
+             is_leave = DoctorLeave.objects.filter(leave_date=target_date).exists()
+             return Response({"is_leave": is_leave, "date": target_date.strftime("%Y-%m-%d")})
+
+        tz = timezone.get_current_timezone()
+        start = timezone.make_aware(datetime.combine(target_date, time.min), tz)
+        end   = timezone.make_aware(datetime.combine(target_date, time.max), tz)
+
+        appointments = Appointment.objects.filter(
+            date_time__range=(start, end),
+            date_time__gt=now
+        ).exclude(status="cancelled")
+
+        data = []
+        for a in appointments:
+            data.append({
+                "id": a.id,
+                "patient_name": a.patient_name or (a.patient.username if a.patient else "Unknown"),
+                "patient_email": a.patient_email or (a.patient.email if a.patient else "N/A"),
+                "time": a.date_time.astimezone(tz).strftime("%I:%M %p"),
+                "consultation_type": a.consultation_type
+            })
+
+        # Also fetch all upcoming leaves for the sidebar/list
+        all_leaves = DoctorLeave.objects.filter(leave_date__gte=now.date()).order_by("leave_date")
+        leave_list = [{"id": l.id, "date": l.leave_date.strftime("%Y-%m-%d")} for l in all_leaves]
+
+        return Response({
+            "target_date": target_date.strftime("%Y-%m-%d"),
+            "affected_count": len(data),
+            "appointments": data,
+            "all_leaves": leave_list
+        })
 
     def delete(self, request):
         date_str = request.query_params.get("date")
@@ -1484,6 +1558,7 @@ class AdminLeaveTodayView(APIView):
             return Response({"success": True, "message": f"Leave removed for {date_str}"})
         except ValueError:
             return Response({"error": "Invalid date format"}, status=400)
+
 
 class UserConsultationView(APIView):
     permission_classes = [IsAuthenticated]

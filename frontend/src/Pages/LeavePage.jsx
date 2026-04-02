@@ -15,7 +15,7 @@ export default function LeavePage() {
 
   // Fetch all leaves initially and check specific date on change
   const fetchAllLeaves = () => {
-    api.get("api/admin/leave-today/").then(res => setMarkedLeaves(res.data)).catch(() => {});
+    api.get("api/admin/leave-today/").then(res => setMarkedLeaves(res.data.all_leaves || [])).catch(() => { });
   };
 
   useEffect(() => {
@@ -24,7 +24,7 @@ export default function LeavePage() {
 
   useEffect(() => {
     setLoading(true);
-    api.get(`api/admin/leave-today/?date=${leaveDate}`)
+    api.get(`api/admin/leave-today/?date=${leaveDate}&check=1`)
       .then(res => setIsLeave(res.data.is_leave))
       .catch(() => setIsLeave(false))
       .finally(() => setLoading(false));
@@ -67,7 +67,7 @@ export default function LeavePage() {
 
       <div style={s.card}>
         <h2 style={s.heading}>🚫 Doctor Leave Management</h2>
-        
+
         <div style={s.field}>
           <label style={s.label}>📅 Select Leave Date</label>
           <input
@@ -81,8 +81,8 @@ export default function LeavePage() {
         <div style={s.statusBox}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={s.subhead}>Status for {leaveDate}</span>
-            {isLeave 
-              ? <span style={s.leaveBadge}>🔴 ON LEAVE</span> 
+            {isLeave
+              ? <span style={s.leaveBadge}>🔴 ON LEAVE</span>
               : <span style={s.availBadge}>🟢 AVAILABLE</span>
             }
           </div>
