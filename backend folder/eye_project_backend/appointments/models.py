@@ -137,6 +137,9 @@ class Appointment(models.Model):
 
     meeting_link = models.URLField(blank=True, null=True)
 
+    # Tracks if patient already used the one-time emergency reschedule
+    emergency_rescheduled = models.BooleanField(default=False)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     @property

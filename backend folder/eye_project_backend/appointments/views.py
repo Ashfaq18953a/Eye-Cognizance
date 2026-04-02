@@ -1028,7 +1028,9 @@ class PatientRescheduleOrRefundView(APIView):
                 "doctor_name": "Maimunissa",
                 "date_time": appt.date_time.isoformat(),
                 "consultation_type": appt.consultation_type,
-                "amount": appt.amount
+                "amount": appt.amount,
+                "emergency_rescheduled": appt.emergency_rescheduled,
+                "status": appt.status,
             })
         except Appointment.DoesNotExist:
             return Response({"error": "Appointment not found"}, status=404)
@@ -1043,6 +1045,12 @@ class PatientRescheduleOrRefundView(APIView):
             display_name = appt.patient_name or (appt.patient.username if appt.patient else "Patient")
 
             if action == "cancel":
+                # Check if already rescheduled or already cancelled
+                if appt.emergency_rescheduled:
+                    return Response({"error": "This appointment has already been rescheduled and cannot be cancelled for a refund."}, status=400)
+                if appt.status == "cancelled" and appt.payment_status == "refunded":
+                    return Response({"error": "This appointment has already been cancelled and refunded."}, status=400)
+                
                 # ── Initiate Razorpay Refund ─────────────────────────────
                 refund_destination = "your original payment method"
                 if appt.razorpay_payment_id:
@@ -1091,6 +1099,12 @@ class PatientRescheduleOrRefundView(APIView):
                 return Response({"success": True, "refund_status": f"Refunded to {refund_destination}"})
 
             elif action == "reschedule":
+                # Check if already cancelled
+                if appt.status == "cancelled":
+                    return Response({"error": "This appointment was already cancelled and cannot be rescheduled."}, status=400)
+                if appt.emergency_rescheduled:
+                    return Response({"error": "You have already used your one-time free reschedule."}, status=400)
+
                 # Reschedule status is handled by redirecting on frontend, 
                 # but we mark it here so it doesn't show as 'cancelled' in stats
                 appt.status = "rescheduling" 
@@ -1156,11 +1170,18 @@ class PatientFreeRescheduleView(APIView):
         try:
             old_appt = Appointment.objects.get(id=old_appt_id)
 
+            if old_appt.emergency_rescheduled:
+                return Response({"error": "This appointment has already been rescheduled once."}, status=400)
+            
+            if old_appt.payment_status == "refunded":
+                return Response({"error": "This appointment has been refunded and cannot be rescheduled."}, status=400)
+
             naive_dt = datetime.strptime(f"{selected_date} {selected_time}", "%Y-%m-%d %I:%M %p")
             date_time = timezone.make_aware(naive_dt, timezone.get_current_timezone())
 
             old_appt.date_time = date_time
             old_appt.status = "scheduled"
+            old_appt.emergency_rescheduled = True
             old_appt.save()
 
             proxy_link = request.build_absolute_uri(f"/api/join-meeting/{old_appt.id}/")
@@ -1210,6 +1231,24 @@ class PatientOneClickRescheduleView(APIView):
         try:
             appt = Appointment.objects.get(id=appt_id)
             
+            # Check if already processed
+            if appt.emergency_rescheduled:
+                return HttpResponse("""
+                    <div style="font-family:sans-serif; text-align:center; padding-top:100px;">
+                        <h1>Already Rescheduled</h1>
+                        <p>You have already used your one-time free reschedule for this appointment.</p>
+                        <p>If you need to change it again, please contact the clinic.</p>
+                    </div>
+                """)
+            
+            if appt.payment_status == "refunded":
+                return HttpResponse("""
+                    <div style="font-family:sans-serif; text-align:center; padding-top:100px;">
+                        <h1>Appointment Refunded</h1>
+                        <p>This appointment has already been cancelled and refunded. It cannot be rescheduled.</p>
+                    </div>
+                """)
+
             # Check for conflict
             tz = timezone.get_current_timezone()
             naive_dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %I:%M %p")
@@ -1222,6 +1261,7 @@ class PatientOneClickRescheduleView(APIView):
             appt.date_time = new_date_time
             appt.status = "scheduled"  # reset from cancelled or pending
             appt.payment_status = "paid" # ensure it stays paid
+            appt.emergency_rescheduled = True # Mark as rescheduled
             appt.save()
 
             # Notify Admin
