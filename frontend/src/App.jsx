@@ -33,6 +33,7 @@ import UsersPage from "./Pages/UsersPage";
 // ADMIN PAGES
 import Dashboard from "./Pages/Dashboard";
 import AppointmentsPage from "./Pages/AppointmentsPage";
+import PrescriptionPage from "./Pages/PrescriptionPage";
 import PatientsPage from "./Pages/PatientsPage";
 import PaymentsPage from "./Pages/PaymentsPage";
 import AdminMessages from "./Pages/AdminMessages";
@@ -95,6 +96,7 @@ export default function App() {
           <Route index element={<Dashboard />} /> {/* default dashboard */}
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="appointments" element={<AppointmentsPage />} />
+          <Route path="appointments/:id/prescription" element={<PrescriptionPage />} />
           <Route path="patients" element={<PatientsPage />} />
           <Route path="messages" element={<AdminMessages />} />
           <Route path="payments" element={<PaymentsPage />} />

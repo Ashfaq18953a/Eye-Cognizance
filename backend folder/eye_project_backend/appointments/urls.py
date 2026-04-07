@@ -28,9 +28,15 @@ from .views import (
     patient_update,
     JoinMeetingProxyView,
     GenerateInvoiceView,
+    PrescriptionView,
+    PrescriptionPDFView,
 )
 
 urlpatterns = [
+    # Prescription
+    path("admin/appointments/<int:appt_id>/prescription/", PrescriptionView.as_view(), name="admin-prescription"),
+    path("admin/appointments/<int:appt_id>/pdf/", PrescriptionPDFView.as_view(), name="admin-prescription-pdf"),
+
     # Payment
     path("create-order/", create_razorpay_order, name="create-order"),
     path("locked-slots/", locked_slots, name="locked-slots"),

@@ -5,6 +5,8 @@ export default function LeavePage() {
   const [leaveDate, setLeaveDate] = useState(new Date().toISOString().split("T")[0]);
   const [markedLeaves, setMarkedLeaves] = useState([]);
   const [isLeave, setIsLeave] = useState(false);
+  const [affectedPatients, setAffectedPatients] = useState([]);
+  const [customMessage, setCustomMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
 
@@ -13,29 +15,42 @@ export default function LeavePage() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // Fetch all leaves initially and check specific date on change
+  // Fetch all leaves initially
   const fetchAllLeaves = () => {
     api.get("api/admin/leave-today/").then(res => setMarkedLeaves(res.data.all_leaves || [])).catch(() => { });
   };
 
   useEffect(() => {
-    fetchAllLeaves();
+    fetchAllLeaves()
   }, []);
 
+  // Check state and affected patients for selected date
   useEffect(() => {
     setLoading(true);
-    api.get(`api/admin/leave-today/?date=${leaveDate}&check=1`)
-      .then(res => setIsLeave(res.data.is_leave))
-      .catch(() => setIsLeave(false))
+    api.get(`api/admin/leave-today/?date=${leaveDate}`)
+      .then(res => {
+        // Find if this date is in the list of leaves
+        const isCurrentlyLeave = res.data.all_leaves?.some(l => l.date === leaveDate);
+        setIsLeave(isCurrentlyLeave);
+        setAffectedPatients(res.data.appointments || []);
+      })
+      .catch(() => {
+        setIsLeave(false);
+        setAffectedPatients([]);
+      })
       .finally(() => setLoading(false));
   }, [leaveDate]);
 
   const markLeave = async () => {
-    if (!window.confirm(`Mark ${leaveDate} as leave? All affected patients will be notified.`)) return;
+    if (!window.confirm(`Mark ${leaveDate} as leave? ${affectedPatients.length} patients will be cancelled and notified.`)) return;
     setLoading(true);
     try {
-      const res = await api.post("api/admin/leave-today/", { date: leaveDate });
+      const res = await api.post("api/admin/leave-today/", { 
+        date: leaveDate,
+        custom_message: customMessage
+      });
       setIsLeave(true);
+      setAffectedPatients([]); // cleared after cancellation
       fetchAllLeaves(); // refresh list
       showToast("success", `✅ Leave marked. ${res.data.cancelled || 0} patients notified.`);
     } catch {
@@ -87,11 +102,33 @@ export default function LeavePage() {
             }
           </div>
 
+          {!isLeave && affectedPatients.length > 0 && (
+            <div style={s.affectedBox}>
+              <h4 style={{ fontSize: 13, color: "#f59e0b", marginBottom: 10 }}>⚠️ {affectedPatients.length} Patients Affected:</h4>
+              <div style={s.patientScroller}>
+                {affectedPatients.map(p => (
+                  <div key={p.id} style={s.pItem}>
+                    <span>{p.time} - <strong>{p.patient_name}</strong></span>
+                    <span style={{ fontSize: 10, opacity: 0.6 }}>{p.patient_email}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div style={{ marginTop: 24 }}>
             {!isLeave ? (
-              <button onClick={markLeave} disabled={loading} style={s.markBtn}>
-                {loading ? "Processing..." : "🔴 Mark as Leave (Cancel Appts)"}
-              </button>
+              <>
+                <textarea 
+                  placeholder="Optional custom message for patients..."
+                  value={customMessage}
+                  onChange={e => setCustomMessage(e.target.value)}
+                  style={s.textarea}
+                />
+                <button onClick={markLeave} disabled={loading} style={s.markBtn}>
+                  {loading ? "Processing..." : "🔴 Mark as Leave (Cancel Appts)"}
+                </button>
+              </>
             ) : (
               <button onClick={() => deleteLeave(leaveDate)} disabled={loading} style={s.delBtn}>
                 {loading ? "Processing..." : "🔓 Remove Leave (Unlock Slots)"}
@@ -147,5 +184,9 @@ const s = {
   leaveItem: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", border: "1.5px solid #e2e8f0", padding: "10px 16px", borderRadius: 12 },
   delItemBtn: { padding: "4px 10px", borderRadius: 6, border: "none", background: "#fee2e2", color: "#dc2626", fontSize: 11, fontWeight: 700, cursor: "pointer" },
   info: { marginTop: 20, fontSize: 12, color: "#94a3b8", lineHeight: 1.6 },
-  toast: { position: "fixed", top: 24, right: 24, padding: "12px 24px", borderRadius: 12, color: "#fff", fontWeight: 600, fontSize: 14, zIndex: 9999 }
+  toast: { position: "fixed", top: 24, right: 24, padding: "12px 24px", borderRadius: 12, color: "#fff", fontWeight: 600, fontSize: 14, zIndex: 9999 },
+  textarea: { width: "100%", height: 80, padding: 12, borderRadius: 12, border: "1.5px solid #e2e8f0", fontSize: 13, marginBottom: 15, outline: "none", resize: "none", fontFamily: "inherit" },
+  affectedBox: { marginTop: 20, padding: 15, background: "#fffbeb", borderRadius: 12, border: "1px solid #fde68a" },
+  patientScroller: { maxHeight: 150, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 },
+  pItem: { display: "flex", flexDirection: "column", fontSize: 12, color: "#92400e", borderBottom: "1px solid #fef3c7", paddingBottom: 5 }
 };

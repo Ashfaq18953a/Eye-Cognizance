@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import api from "./api"; // Axios instance
 import Badge from "../Components/Badge";
 
@@ -15,7 +16,7 @@ export default function AppointmentsPage() {
 
   // Real-time update for "Join" button state
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 10000); 
+    const timer = setInterval(() => setCurrentTime(new Date()), 10000);
     return () => clearInterval(timer);
   }, []);
 
@@ -165,6 +166,7 @@ export default function AppointmentsPage() {
                 <th className="border px-4 py-2">Status</th>
                 <th className="border px-4 py-2">Payment</th>
                 <th className="border px-4 py-2">Meeting</th>
+                <th className="border px-4 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -225,6 +227,14 @@ export default function AppointmentsPage() {
                     ) : (
                       "-"
                     )}
+                  </td>
+                  <td className="border px-4 py-2">
+                     <Link 
+                      to={`/admin/appointments/${appt.id}/prescription`}
+                      className="bg-blue-600 text-white px-3 py-1 rounded text-sm font-bold hover:bg-blue-700 transition shadow"
+                     >
+                       Prescription
+                     </Link>
                   </td>
                 </tr>
               ))}

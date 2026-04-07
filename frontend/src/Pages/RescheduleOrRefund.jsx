@@ -26,19 +26,19 @@ export default function RescheduleOrRefund() {
       .then((r) => r.json())
       .then((data) => {
         if (data.error) {
-            setError(data.error);
-            setLoading(false);
-            return;
+          setError(data.error);
+          setLoading(false);
+          return;
         }
         setAppt(data);
-        
+
         // Locked states
         if (data.emergency_rescheduled) {
-            setActionDone("already_rescheduled");
+          setActionDone("already_rescheduled");
         } else if (data.status === "cancelled" && data.payment_status === "refunded") {
-            setActionDone("already_cancelled");
+          setActionDone("already_cancelled");
         }
-        
+
         setLoading(false);
       })
       .catch(() => {
@@ -62,7 +62,7 @@ export default function RescheduleOrRefund() {
         method: "POST",
         body: formData, // Sending multipart/form-data
       });
-      
+
       const data = await res.json();
       if (data.success) {
         setActionDone(action);
@@ -113,99 +113,99 @@ export default function RescheduleOrRefund() {
         {processing && <div className="absolute top-0 left-0 h-1 bg-blue-500 animate-progress-indefinite w-full"></div>}
 
         <div className="text-center mb-8">
-            <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Emergency Update</h1>
-            <p className="text-gray-500 mt-2">Managing your cancelled appointment.</p>
+          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Emergency Update</h1>
+          <p className="text-gray-500 mt-2">Managing your cancelled appointment.</p>
         </div>
 
         {/* ALREADY DONE STATES */}
         {actionDone === "already_rescheduled" || actionDone === "reschedule" ? (
-            <div className="bg-green-50 rounded-2xl p-8 text-center border border-green-200">
-                <div className="text-5xl mb-4">🗓️</div>
-                <h2 className="text-2xl font-bold text-green-800 mb-2">Already Rescheduled</h2>
-                <p className="text-green-700 text-sm">
-                    This appointment has already been rescheduled. 
-                    {actionDone === "reschedule" ? " Redirecting you now..." : " No further changes can be made."}
-                </p>
-            </div>
+          <div className="bg-green-50 rounded-2xl p-8 text-center border border-green-200">
+            <div className="text-5xl mb-4">🗓️</div>
+            <h2 className="text-2xl font-bold text-green-800 mb-2">Already Rescheduled</h2>
+            <p className="text-green-700 text-sm">
+              This appointment has already been rescheduled.
+              {actionDone === "reschedule" ? " Redirecting you now..." : " No further changes can be made."}
+            </p>
+          </div>
         ) : actionDone === "already_cancelled" || actionDone === "cancel" ? (
-            <div className="bg-blue-50 rounded-2xl p-8 text-center border border-blue-200">
-                <div className="text-5xl mb-4">💰</div>
-                <h2 className="text-2xl font-bold text-blue-800 mb-2">Already Refunded</h2>
-                <p className="text-blue-700 text-sm">
-                    Your refund of ₹{appt.amount} has been initiated. 
-                    Expect it in 3-5 business days.
-                </p>
-            </div>
+          <div className="bg-blue-50 rounded-2xl p-8 text-center border border-blue-200">
+            <div className="text-5xl mb-4">💰</div>
+            <h2 className="text-2xl font-bold text-blue-800 mb-2">Already Refunded</h2>
+            <p className="text-blue-700 text-sm">
+              Your refund of ₹{appt.amount} has been initiated.
+              Expect it in 3-5 business days.
+            </p>
+          </div>
         ) : !showConfirm ? (
           <>
             <ApptInfo />
             {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 text-red-700 text-sm animate-shake">⚠️ {error}</div>}
-            
+
             <div className="space-y-4">
-                {flow === "reschedule" ? (
-                    <button
-                        onClick={() => setShowConfirm(true)}
-                        className="w-full py-4 rounded-2xl bg-[#6A8E4F] hover:bg-[#5a7a41] text-white font-bold text-lg transition-all shadow-lg active:scale-95"
-                    >
-                        📅 Reschedule for Free
-                    </button>
-                ) : (
-                    <div className="space-y-4">
-                        <div className="space-y-2">
-                             <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Reason for refund (optional)</label>
-                             <textarea 
-                                value={reason}
-                                onChange={(e) => setReason(e.target.value)}
-                                placeholder="Tell us why you are requesting a refund..."
-                                className="w-full p-4 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:ring-2 focus:ring-[#6A8E4F] outline-none h-24 transition-all"
-                             />
-                        </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">
+                  {flow === "reschedule" ? "Message for Doctor (optional)" : "Reason for refund (optional)"}
+                </label>
+                <textarea
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder={flow === "reschedule" ? "Tell the doctor why you are rescheduling..." : "Tell us why you are requesting a refund..."}
+                  className="w-full p-4 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:ring-2 focus:ring-[#6A8E4F] outline-none h-24 transition-all"
+                />
+              </div>
 
-                        <div className="space-y-2">
-                             <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Upload supporting document (optional)</label>
-                             <input 
-                                type="file"
-                                onChange={(e) => setFile(e.target.files[0])}
-                                className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 cursor-pointer"
-                             />
-                        </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Upload supporting documents (optional)</label>
+                <input
+                  type="file"
+                  onChange={(e) => setFile(e.target.files[0])}
+                  className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 cursor-pointer"
+                />
+              </div>
 
-                        <button
-                            onClick={() => setShowConfirm(true)}
-                            className="w-full py-4 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-bold text-lg transition-all shadow-lg active:scale-95"
-                        >
-                            💰 Confirm & Request Refund
-                        </button>
-                    </div>
-                )}
+              {flow === "reschedule" ? (
+                <button
+                  onClick={() => setShowConfirm(true)}
+                  className="w-full py-4 rounded-2xl bg-[#6A8E4F] hover:bg-[#5a7a41] text-white font-bold text-lg transition-all shadow-lg active:scale-95"
+                >
+                  📅 Proceed to Reschedule
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowConfirm(true)}
+                  className="w-full py-4 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-bold text-lg transition-all shadow-lg active:scale-95"
+                >
+                  💰 Confirm & Request Refund
+                </button>
+              )}
             </div>
           </>
         ) : (
           <div className="py-10 text-center space-y-6">
-              <div className="text-6xl animate-bounce">{flow === "reschedule" ? "🗓️" : "❓"}</div>
-              <h2 className="text-2xl font-bold text-gray-800">
-                {flow === "reschedule" ? "Are you sure you want to reschedule?" : "Are you sure you want to cancel and refund?"}
-              </h2>
-              <p className="text-gray-500 text-sm">
-                Once confirmed, this action cannot be undone.
-              </p>
-              
-              <div className="flex gap-4">
-                  <button 
-                    onClick={() => setShowConfirm(false)}
-                    disabled={processing}
-                    className="flex-1 py-3 rounded-xl border-2 border-gray-100 text-gray-600 font-bold hover:bg-gray-50 transition disabled:opacity-50"
-                  >
-                    Go Back
-                  </button>
-                  <button 
-                    onClick={() => handleAction(flow)}
-                    disabled={processing}
-                    className={`flex-1 py-3 rounded-xl text-white font-bold transition shadow-md active:scale-95 disabled:opacity-50 ${flow === 'reschedule' ? 'bg-[#6A8E4F] hover:bg-[#5a7a41]' : 'bg-red-600 hover:bg-red-700'}`}
-                  >
-                    {processing ? "Confirming..." : "Yes, Proceed"}
-                  </button>
-              </div>
+            <div className="text-6xl animate-bounce">{flow === "reschedule" ? "🗓️" : "❓"}</div>
+            <h2 className="text-2xl font-bold text-gray-800">
+              {flow === "reschedule" ? "Are you sure you want to reschedule and upload documents?" : "Are you sure you want to cancel and refund?"}
+            </h2>
+            <p className="text-gray-500 text-sm">
+              Once confirmed, this action cannot be undone.
+            </p>
+
+            <div className="flex gap-4">
+              <button
+                onClick={() => setShowConfirm(false)}
+                disabled={processing}
+                className="flex-1 py-3 rounded-xl border-2 border-gray-100 text-gray-600 font-bold hover:bg-gray-50 transition disabled:opacity-50"
+              >
+                Go Back
+              </button>
+              <button
+                onClick={() => handleAction(flow)}
+                disabled={processing}
+                className={`flex-1 py-3 rounded-xl text-white font-bold transition shadow-md active:scale-95 disabled:opacity-50 ${flow === 'reschedule' ? 'bg-[#6A8E4F] hover:bg-[#5a7a41]' : 'bg-red-600 hover:bg-red-700'}`}
+              >
+                {processing ? "Confirming..." : "Yes, Proceed"}
+              </button>
+            </div>
           </div>
         )}
       </div>

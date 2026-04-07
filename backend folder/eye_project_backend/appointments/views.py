@@ -722,8 +722,8 @@ class AdminAppointmentView(APIView):
                 "id": appt.id,
                 # Patient details
                 "patient_name": appt.patient_name or getattr(appt.patient, "username", "N/A"),
-                "patient_email": getattr(appt.patient, "email", "N/A"),
-                "patient_phone": getattr(appt.patient, "mobile", "N/A"), # use mobile
+                "patient_email": appt.patient_email or getattr(appt.patient, "email", "N/A"),
+                "patient_mobile": appt.patient_mobile or getattr(appt.patient, "mobile", "N/A"),
                 "patient_dob": appt.patient_dob,
 
                 # Consultation info
@@ -1154,6 +1154,14 @@ class PatientRescheduleOrRefundView(APIView):
                     return Response({"error": "This appointment was already cancelled and cannot be rescheduled."}, status=400)
                 if appt.emergency_rescheduled:
                     return Response({"error": "You have already used your one-time free reschedule."}, status=400)
+
+                # Capture reason and document even for reschedule
+                cancel_reason = request.data.get("reason")
+                cancel_doc = request.FILES.get("document")
+                if cancel_reason:
+                    appt.cancel_reason = cancel_reason
+                if cancel_doc:
+                    appt.cancel_document = cancel_doc
 
                 # Reschedule status is handled by redirecting on frontend, 
                 # but we mark it here so it doesn't show as 'cancelled' in stats
@@ -1794,3 +1802,173 @@ def admin_notifications_list(request):
 def admin_notifications_mark_read(request):
     AdminNotification.objects.filter(is_read=False).update(is_read=True)
     return Response({"success": True})
+
+class PrescriptionView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, appt_id):
+        from .models import Prescription
+        try:
+            p = Prescription.objects.get(appointment_id=appt_id)
+            return Response({
+                "re_sph": p.re_sph, "re_cyl": p.re_cyl, "re_axis": p.re_axis, "re_add": p.re_add, "re_va": p.re_va,
+                "le_sph": p.le_sph, "le_cyl": p.le_cyl, "le_axis": p.le_axis, "le_add": p.le_add, "le_va": p.le_va,
+                "medicines": p.medicines,
+                "treatment_advised": p.treatment_advised,
+                "doctor_notes": p.doctor_notes,
+                "opticals_advised": p.opticals_advised
+            })
+        except Prescription.DoesNotExist:
+            return Response({"error": "No prescription found"}, status=404)
+
+    def post(self, request, appt_id):
+        from .models import Prescription, Appointment
+        try:
+            appt = Appointment.objects.get(id=appt_id)
+            p, created = Prescription.objects.get_or_create(appointment=appt)
+            
+            fields = [
+                're_sph', 're_cyl', 're_axis', 're_add', 're_va',
+                'le_sph', 'le_cyl', 'le_axis', 'le_add', 'le_va',
+                'medicines', 'treatment_advised', 'doctor_notes', 'opticals_advised'
+            ]
+            
+            for field in fields:
+                if field in request.data:
+                    setattr(p, field, request.data[field])
+            
+            p.save()
+            return Response({"success": True, "message": "Prescription saved successfully!"})
+        except Appointment.DoesNotExist:
+            return Response({"error": "Appointment not found"}, status=404)
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
+
+
+class PrescriptionPDFView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, appt_id):
+        from .models import Prescription, Appointment
+        from io import BytesIO
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        
+        try:
+            appt = Appointment.objects.get(id=appt_id)
+            try:
+                p = Prescription.objects.get(appointment=appt)
+            except Prescription.DoesNotExist:
+                return HttpResponse("<h1>Prescription not found</h1><p>Please save the prescription before generating PDF.</p>")
+            
+            buffer = BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+            elements = []
+            
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle(
+                'Title',
+                parent=styles['Heading1'],
+                fontSize=26,
+                textColor=colors.HexColor("#0f172a"),
+                alignment=1, # Center
+                spaceAfter=10
+            )
+            sub_title_style = ParagraphStyle(
+                'SubTitle',
+                parent=styles['Normal'],
+                fontSize=10,
+                textColor=colors.gray,
+                alignment=1,
+                spaceAfter=20
+            )
+            header_style = ParagraphStyle(
+                'Header',
+                parent=styles['Heading2'],
+                fontSize=14,
+                textColor=colors.HexColor("#1e293b"),
+                spaceAfter=10,
+                borderWidth=0,
+                borderPadding=5
+            )
+
+            # --- CLINIC HEADER ---
+            elements.append(Paragraph("EYE COGNIZANCE", title_style))
+            elements.append(Paragraph("Advanced Eye Care & Retina Center<br/>Dr. Maimunissa (MBBS, MS Ophthalmology)<br/>Contact: +91 99887 76655 | New Delhi", sub_title_style))
+            elements.append(Spacer(1, 20))
+
+            # --- PATIENT INFO ---
+            elements.append(Paragraph(f"<b>Patient Name:</b> {appt.patient_name or 'N/A'}", styles['Normal']))
+            elements.append(Paragraph(f"<b>Date:</b> {timezone.localtime(timezone.now()).strftime('%d %b %Y')}", styles['Normal']))
+            elements.append(Paragraph(f"<b>Consultation ID:</b> #BC-{appt_id}", styles['Normal']))
+            elements.append(Spacer(1, 20))
+
+            # --- VISION POWER TABLE ---
+            elements.append(Paragraph("👁️ Refraction & Vision Power", header_style))
+            vision_data = [
+                ['EYE', 'SPH', 'CYL', 'AXIS', 'ADD', 'VA'],
+                ['RE (OD)', p.re_sph, p.re_cyl, p.re_axis, p.re_add, p.re_va],
+                ['LE (OS)', p.le_sph, p.le_cyl, p.le_axis, p.le_add, p.le_va]
+            ]
+            vision_table = Table(vision_data, colWidths=[100, 70, 70, 70, 70, 70])
+            vision_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor("#0f172a")),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.gray),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            elements.append(vision_table)
+            elements.append(Spacer(1, 30))
+
+            # --- Rx (Medicines) ---
+            rx_style = ParagraphStyle(
+                'RX',
+                parent=styles['Normal'],
+                fontSize=28,
+                fontName='Helvetica-BoldOblique',
+                textColor=colors.HexColor("#312e81"),
+                spaceBefore=10
+            )
+            elements.append(Paragraph("Rx", rx_style))
+            elements.append(Paragraph(p.medicines.replace('\n', '<br/>'), styles['Normal']))
+            elements.append(Spacer(1, 40))
+
+            # --- ADVICE ---
+            if p.treatment_advised:
+                elements.append(Paragraph("🩹 Treatment Advised", header_style))
+                elements.append(Paragraph(p.treatment_advised.replace('\n', '<br/>'), styles['Normal']))
+                elements.append(Spacer(1, 20))
+            
+            if p.opticals_advised:
+                elements.append(Paragraph("👓 Optical Gear Advice", header_style))
+                elements.append(Paragraph(p.opticals_advised.replace('\n', '<br/>'), styles['Normal']))
+                elements.append(Spacer(1, 30))
+
+            # --- FOOTER / SIGNATURE ---
+            elements.append(Spacer(1, 100))
+            sig_style = ParagraphStyle('Sig', parent=styles['Normal'], alignment=2) # Right
+            elements.append(Paragraph("____________________________", sig_style))
+            elements.append(Paragraph("<b>Dr. Maimunissa</b>", sig_style))
+            elements.append(Paragraph("Consultant Ophthalmologist", style=ParagraphStyle('SigSub', parent=styles['Normal'], alignment=2, fontSize=8, textColor=colors.gray)))
+
+            # Build PDF
+            doc.build(elements)
+            buffer.seek(0)
+            
+            timestamp = timezone.localtime(timezone.now()).strftime('%Y%m%d%H%M')
+            filename = f"Prescription_{appt_id}_{timestamp}.pdf"
+            
+            response = HttpResponse(buffer, content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+
+        except Appointment.DoesNotExist:
+            return HttpResponse("<h1>Error: Appointment not found</h1>", status=404)
+        except Exception as e:
+            return HttpResponse(f"<h1>Error generating PDF</h1><p>{str(e)}</p>", status=500)
